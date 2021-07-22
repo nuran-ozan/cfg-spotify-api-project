@@ -1,0 +1,138 @@
+import requests
+from pprint import pprint
+
+#AUTHENTICATION PROCESS
+CLIENT_ID = "INSERTCLIENTID"
+CLIENT_SECRET = "INSERTCLIENTSECRETCODE"
+
+grant_type = "client_credentials"
+body_params = {"grant_type": grant_type}
+
+auth_url="https://accounts.spotify.com/api/token"
+auth_response = requests.post(auth_url, data=body_params, auth= (CLIENT_ID, CLIENT_SECRET))
+
+auth_response_data = auth_response.json()
+accesstoken = auth_response_data["access_token"]
+
+headers = {
+    'Authorization': 'Bearer {}'.format(accesstoken)
+}
+
+BASE_URL = 'https://api.spotify.com/v1/'
+
+#FUNCTION 1 - find_artist():
+#ASK THE USER TO INPUT WHAT ARTIST THEY WOULD LIKE TO SEARCH FOR
+#SEARCH THE SPOTIFY API FOR THE ARTIST THE USER INPUTTED - SPOTIFY RETURNS DATA FOR ARTISTS CONTAINING THE WORD(s) OR NUMBERS INPUTTED
+#THE DATA RETURNED CONTAINS ONLY TWO BITS OF THE INFO THAT WE NEED FOR THIS CODE - "NAME" (ARTIST NAME) and "ID" (UNIQUE ARTIST ID).
+#CONFIRM WE HAVE THE RIGHT ARTIST
+
+def find_artist():
+    input_artist = input(f"What artist would you like to search for?: ")
+
+    r_find_artist = requests.get(BASE_URL + "search?" + "q=" + input_artist + "&offset=0" + "&limit=5" + "&type=artist", headers=headers)
+    response_find_artist = r_find_artist.json()
+
+#We loop through our 'get request' api response (a list of potential artist matches)
+#We iterate through each potential match for the artist name. Until the user confirms that the correct artist name.
+#Once the user confirms, we save the data returned for that artist only (confirmed_artist_data). We break the loop and go to the next stage.
+
+    confirmed_artist_data={}
+    for artist in response_find_artist["artists"]["items"]:
+        is_correct = input("Is " + artist["name"] + " the correct artist? ")
+        if is_correct == "yes":
+            confirmed_artist_data = artist
+            break
+    return confirmed_artist_data
+
+#FUNCTION 2: find_toptracks()
+#WE NEXT WANT TO FIND THE TOP TRACKS FOR OUR CONFIRMED ARTIST. A NEW GET REQUEST IS NEEDED.
+#OUR FIRST FUNCTION SAVED DATA FOR OUR CONFIRMED ARTIST (confirmed_artist_data). THAT DATA CONTAINED THE "ID" FOR THE ARTIST.
+#WE WILL NOW USE THAT ID IN A GET REQUEST - TO GET THE TOP TRACKS FOR OUR CONFIRMED ARTIST ONLY
+
+def find_toptracks():
+    r_toptracks=requests.get(BASE_URL + "artists/" + confirmed_artist_data["id"] + "/top-tracks?market=GB", headers=headers)
+    response_toptracks = r_toptracks.json()
+
+#We defined an empty list - we will need that. Notice how it is outside of the 'for loop'
+#We now loop through our 'get request' api response (which returned our chosen artist's top tracks).
+    #Under the for loop, we defined an empty dictionary - we will need this too
+    #For each track in out list of top tracks, we identify the data we want to use (ie track name and track id)
+    #We add that data into our empty dictionary (so we have one dictionary for each individual track - containing the track name and id)
+    #We then add each dictionary into our empty list (so we end up with one list containing a dictionary for every top track)
+
+    list_track = []
+    for tracks in response_toptracks["tracks"]:
+        toptracks_dict = {}
+        toptracks_dict.update({("trackname",tracks["name"]),("track id",tracks["id"])})
+        list_track.append(toptracks_dict)
+    return(list_track)
+
+#FUNCTION 3: find_audiofeatures
+#FOR EACH TRACK IN OUR TOPTRACKS DICTIONARY - ATM, WE ONLY HAVE THE TRACK NAME AND ID NO.
+#WE NEED MORE DATA FOR OUR CODE.
+#WE TAP INTO THE DATA FROM OUR TOPTRACKS DICTIONARY. REMEMBER HOW WE SAVED EACH TOP TRACK ID's LAST TIME?)
+#WE DO A GET REQUEST FOR THE AUDIO FEATURES OF EACH TRACK USING THOSE TRACK IDS. WE SAVE DATA FOR DANCEABILITY AND TEMPO
+
+def find_audiofeatures():
+    for each in toptracks_dict:
+        r_audiofeatures = requests.get(BASE_URL + "audio-features/" + each["track id"], headers=headers)
+        response_audiofeatures = r_audiofeatures.json()
+
+        each ["tempo"] = response_audiofeatures["tempo"]
+        each ["danceability"] = response_audiofeatures["danceability"]
+    return toptracks_dict
+
+#CALLING THE FUNCTIONS:
+#HERE WE START TO CALL OUR FUNCTIONS. YOU WILL SEE IT IS DONE A BIT DIFFERENT. WE DEFINE A VARIABLE and make it = our function.
+#WHEN PYTHON RUNS THIS CODE, IT WILL LOOK UP THE VARIABLE, SEE IT = THE FUNCTION AND THEN RUN THE FUNCTION
+#WE HAVE DONE IT LIKE THIS AS IF WE RAN THE FUNCTION DIRECTLY, the data returned would not be accessible outside of each for loop.
+
+confirmed_artist_data = find_artist()
+toptracks_dict = find_toptracks()
+audiofeatures_dict = find_audiofeatures()
+
+#HERE WE PULL ALL OF THE DATA VALUES WE NEED TOGETHER, TO MAKE IT EASIER TO ITERATE THROUGH
+#WE HAVE AN EMPTY FINAL LIST. THIS TO HOLD OUR DATA ONCE READY
+#FOR EACH ITEM IN OUR TOPTRACKS DICTIONARY (HAS NAME & ID)
+    #We create an empty dictionary - [this will soon hold all the data we need for each track]
+    #We iterate through each item in our audiofeatures dictionary (HAS TEMPO & DANCE)
+    #We add that iteration's data from the audio features dictionary into the full dictionary.
+    #We also take that iteration's data of the top_tracks dictionary - and add that into the full dictionary.
+        #this woulg give us back to back dictionaries e.g. {TRACK1 DATA}{TRACK2DATA}{TRACK3DATA}
+    #We then add that dictionary to our final list - THIS MEANS WE HAVE A LIST HOLDING OUR LOOP DICTIONARY RESULTS
+    #e.g. [{TRACK1 DATA}{TRACK2DATA}{TRACK3DATA}]
+
+final_list = []
+for item in toptracks_dict:
+    for each in audiofeatures_dict:
+        full_dict = {}
+        full_dict.update(item)
+        full_dict.update(each)
+        final_list.append(full_dict)
+
+#FUNCTION: FOR YOUR [CONFIRMED] ARTIST, FIND AND PRINT THE TOP-HIT TRACKS THAT ARE BEST SUITED TO YOUR ACTIVITY OF CHOICE
+
+def activity():
+   activity_pref = input(f"What would you like to do - dance or run?: ")
+   if activity_pref == "dance":
+       danceable_hitsongs={}
+       print(f"Get a boogie on to these songs by your chosen artist: ")
+       for d in final_list:
+           if d["danceability"]>0.5:
+               danceable_hitsongs.update({("trackname",d["trackname"]),("danceability", d["danceability"])})
+               print(danceable_hitsongs)
+
+   elif activity_pref == "run":
+       running_hitsongs={}
+       print(f"Get running to these songs by your chosen artist:")
+       for r in final_list:
+           if r["tempo"]>70:
+               running_hitsongs.update({("trackname",r["trackname"]),("tempo", r["tempo"])})
+               print(running_hitsongs)
+
+   else:
+       print("I'm sorry, I didn't catch that.")
+       activity()
+
+
+activity()
